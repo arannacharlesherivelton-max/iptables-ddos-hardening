@@ -1,0 +1,59 @@
+A mitigação de ataques DDoS na camada de rede (L3/L4) via Iptables foca em descartar pacotes anômalos e limitar o número máximo de conexões por IP antes que o processamento da máquina seja esgotado. Para aplicar as regras, execute os comandos no terminal Linux como usuário root.
+
+1. Bloqueio de Pacotes Inválidos e Fragmentados
+Pacotes malformados não pertencem a nenhuma conexão legítima e são usados exclusivamente para travar o firewall.
+
+Bash
+
+iptables -A INPUT -m conntrack --ctstate INVALID -j DROP
+iptables -A INPUT -f -j DROP
+
+2. Proteção contra SYN Flood (TCP)
+Limita a taxa de requisições de novas conexões simultâneas vindas de um único endereço IP, impedindo que bots esgotem a fila de atendimento do servidor.
+
+Bash
+
+iptables -A INPUT -p tcp --syn -m limit --limit 1/s --limit-burst 3 -j RETURN
+iptables -A INPUT -p tcp -m connlimit --connlimit-above 20 -j REJECT --reject-with tcp-reset
+
+3. Mitigação de UDP Flood (Crucial para Servidores de Jogos)
+Como tráfego de jogos utiliza predominantemente o protocolo UDP, um bloqueio severo derruba os jogadores reais. A regra abaixo cria um limite de pacotes por segundo, descartando o excesso.
+
+Bash
+
+iptables -A INPUT -p udp -m limit --limit 20/s --limit-burst 50 -j ACCEPT
+iptables -A INPUT -p udp -j DROP
+
+4. Defesa contra Ping Flood (ICMP)
+Impede que a largura de banda seja consumida por requisições massivas de ping, permitindo apenas um número saudável de testes de latência.
+
+Bash
+
+iptables -A INPUT -p icmp -m limit --limit 1/s --limit-burst 2 -j ACCEPT
+iptables -A INPUT -p icmp -j DROP
+
+5. Hardening de Kernel (Obrigatório)
+O Iptables sozinho pode não suportar um SYN Flood extremo. É necessário ativar os SYN Cookies diretamente no núcleo do sistema operacional para blindar a pilha TCP/IP.
+Edite o arquivo /etc/sysctl.conf e adicione estas linhas:
+
+Plaintext
+net.ipv4.tcp_syncookies = 1
+net.ipv4.tcp_max_syn_backlog = 4096
+net.ipv4.conf.all.rp_filter = 1
+Aplique as alterações imediatamente rodando: sysctl -p
+
+6. Salvando as Regras Permanentemente
+O Iptables apaga todas as configurações quando o servidor é reiniciado. Para gravá-las:
+
+Sistemas Ubuntu/Debian:
+
+Bash
+
+apt-get install iptables-persistent
+netfilter-persistent save
+Sistemas CentOS/RHEL/AlmaLinux:
+
+Bash
+
+iptables-save > /etc/sysconfig/iptables
+systemctl enable iptables
